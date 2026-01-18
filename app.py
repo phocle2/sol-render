@@ -149,3 +149,29 @@ def reward_send():
         "already_paid": False,
     }), 200
 
+import secrets
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")  # set in Render env vars
+
+def require_admin():
+    # simple bearer token auth
+    auth = request.headers.get("Authorization", "")
+    if not ADMIN_TOKEN or auth != f"Bearer {ADMIN_TOKEN}":
+        return False
+    return True
+
+@app.get("/admin/balance")
+def admin_balance():
+    if not require_admin():
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    try:
+        bal = client.get_balance(payer_pubkey).value  # lamports
+        return jsonify({
+            "ok": True,
+            "from_wallet": str(payer_pubkey),
+            "lamports": bal,
+            "sol": bal / LAMPORTS_PER_SOL,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
