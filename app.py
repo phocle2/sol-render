@@ -95,6 +95,7 @@ def reward_send():
     except Exception:
         return jsonify({"ok": False, "error": "Invalid receiver wallet address"}), 400
 
+    # idempotency
     if idem_key:
         key = (receiver, str(idem_key))
         if key in PAID:
@@ -103,31 +104,38 @@ def reward_send():
                 "ok": True,
                 "signature": sig,
                 "already_paid": True,
-            })
+            }), 200
 
     lamports = int(amount_sol * LAMPORTS_PER_SOL)
 
     try:
-        blockhash = client.get_latest_blockhash().value.blockhash
-        ix = transfer(
-            TransferParams(
-                from_pubkey=payer_pubkey,
-                to_pubkey=to_pubkey,
-                lamports=lamports,
-            )
-        )
-        tx = Transaction.new_signed_with_payer(
-            [ix],
-            payer_pubkey,
-            [payer],
-            blockhash,
-        )
-        sig = client.send_transaction(
+        # Helpful: ensure we can talk to RPC
+        latest = client.get_latest_blockhash()
+        blockhash = latest.value.blockhash
+
+        ix = transfer(TransferParams(
+            from_pubkey=payer_pubkey,
+            to_pubkey=to_pubkey,
+            lamports=lamports,
+        ))
+
+        tx = Transaction.new_signed_with_payer([ix], payer_pubkey, [payer], blockhash)
+
+        resp = client.send_transaction(
             tx,
             opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"),
-        ).value
+        )
+        sig = resp.value
+
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        # Log full error to Render logs
+        app.logger.exception("reward_send failed")
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "rpc": SOLANA_RPC_URL,
+            "from_wallet": str(payer_pubkey),
+        }), 500
 
     if idem_key:
         PAID[(receiver, str(idem_key))] = (sig, time.time())
@@ -139,4 +147,5 @@ def reward_send():
         "to_wallet": receiver,
         "amount_sol": amount_sol,
         "already_paid": False,
-    })
+    }), 200
+
