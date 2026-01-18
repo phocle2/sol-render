@@ -70,7 +70,6 @@ def health():
         "from_wallet": str(payer_pubkey),
         "default_reward_sol": REWARD_SOL_DEFAULT,
     })
-
 @app.post("/reward/send")
 def reward_send():
     cleanup_paid()
@@ -99,19 +98,17 @@ def reward_send():
     if idem_key:
         key = (receiver, str(idem_key))
         if key in PAID:
-            sig, _ = PAID[key]
+            sig_str, _ = PAID[key]
             return jsonify({
                 "ok": True,
-                "signature": sig,
+                "signature": sig_str,
                 "already_paid": True,
             }), 200
 
     lamports = int(amount_sol * LAMPORTS_PER_SOL)
 
     try:
-        # Helpful: ensure we can talk to RPC
-        latest = client.get_latest_blockhash()
-        blockhash = latest.value.blockhash
+        blockhash = client.get_latest_blockhash().value.blockhash
 
         ix = transfer(TransferParams(
             from_pubkey=payer_pubkey,
@@ -125,10 +122,11 @@ def reward_send():
             tx,
             opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"),
         )
+
         sig = resp.value
+        sig_str = str(sig)
 
     except Exception as e:
-        # Log full error to Render logs
         app.logger.exception("reward_send failed")
         return jsonify({
             "ok": False,
@@ -138,16 +136,17 @@ def reward_send():
         }), 500
 
     if idem_key:
-        PAID[(receiver, str(idem_key))] = (sig, time.time())
+        PAID[(receiver, str(idem_key))] = (sig_str, time.time())
 
     return jsonify({
         "ok": True,
-        "signature": sig,
+        "signature": sig_str,
         "from_wallet": str(payer_pubkey),
         "to_wallet": receiver,
         "amount_sol": amount_sol,
         "already_paid": False,
     }), 200
+
 
 import secrets
 
